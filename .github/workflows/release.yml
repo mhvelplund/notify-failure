@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# All writes (bump commit, tags, release) use the commitizen-ci app token below.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    # The app's own "bump:" push to main re-triggers this workflow; skip it.
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create commitizen-ci app token
+        id: app-token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: Iv23lipmeEDqMDNSsPwQ
+          private-key: ${{ secrets.COMMITIZEN_CI_PRIVATE_KEY }}
+
+      - name: Resolve app bot identity
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          user_id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
+          echo "name=${APP_SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "email=${user_id}+${APP_SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Bump version and update changelog
+        id: cz
+        uses: commitizen-tools/commitizen-action@0.27.1
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          actor: x-access-token
+          git_name: ${{ steps.bot.outputs.name }}
+          git_email: ${{ steps.bot.outputs.email }}
+          push: true
+          changelog_increment_filename: body.md
+
+      - name: Create GitHub release
+        if: steps.cz.outputs.version != steps.cz.outputs.previous_version
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.cz.outputs.version }}
+        run: gh release create "v${VERSION}" --title "v${VERSION}" --notes-file body.md --verify-tag
+
+      - name: Move floating major/minor tags
+        if: steps.cz.outputs.version != steps.cz.outputs.previous_version
+        env:
+          MAJOR: v${{ steps.cz.outputs.next_version_major }}
+          MINOR: v${{ steps.cz.outputs.next_version_major }}.${{ steps.cz.outputs.next_version_minor }}
+          VERSION: ${{ steps.cz.outputs.version }}
+        run: |
+          commit=$(git rev-parse "v${VERSION}^{commit}")
+          git tag -f "$MAJOR" "$commit"
+          git tag -f "$MINOR" "$commit"
+          git push -f origin "refs/tags/${MAJOR}" "refs/tags/${MINOR}"
