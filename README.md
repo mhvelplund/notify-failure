@@ -42,11 +42,21 @@ jobs:
       actions: read # list this run's jobs and steps
       checks: read # read the failed job's error annotations
     steps:
-      - uses: mhvelplund/notify-failure@main
+      - uses: mhvelplund/notify-failure@v1
         with:
           ntfy-topic: ${{ secrets.NTFY_TOPIC }}
           title-prefix: Build failed
 ```
+
+## Versioning
+
+Releases are cut automatically from [Conventional Commits](https://www.conventionalcommits.org)
+on `main`: every `fix:` or `feat:` (or breaking change) produces a `vX.Y.Z` tag and a GitHub
+release. The floating tags move with each release:
+
+- `@v1` follows the latest `1.x.y` release
+- `@v1.2` follows the latest `1.2.y` release
+- `@v1.2.3` pins an exact release
 
 ## Inputs
 
